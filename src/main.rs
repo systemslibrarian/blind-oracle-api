@@ -1,0 +1,58 @@
+mod fhe;
+mod routes;
+
+use axum::{routing::{get, post}, Router};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tower_http::cors::{CorsLayer, AllowOrigin};
+use axum::http::Method;
+
+use routes::compute::{compute_add, AppState};
+
+#[tokio::main]
+async fn main() {
+    // Initialize FHE context (confirms TFHE-rs is available)
+    let ctx = fhe::init();
+    if !ctx.ready {
+        eprintln!("[FHE] Failed to initialize TFHE-rs context.");
+        std::process::exit(1);
+    }
+
+    let state = Arc::new(AppState::new());
+
+    let cors = CorsLayer::new()
+        .allow_origin(AllowOrigin::list([
+            "https://systemslibrarian.github.io".parse().unwrap(),
+            "http://localhost:5173".parse().unwrap(),
+        ]))
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers(tower_http::cors::Any);
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/compute/add", post(compute_add))
+        .layer(cors)
+        .with_state(state);
+
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3001);
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    println!("[SERVER] Listening on {addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+async fn health() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "scheme": "TFHE-rs",
+        "fhe": true,
+        "bootstrapping": "gate_bootstrapping_per_operation",
+        "expectedComputeMs": "100-2000",
+        "serverKeyDeserializeMs": "1000-5000 (cached after first use)"
+    }))
+}
