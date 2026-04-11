@@ -5,6 +5,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tfhe::prelude::*;
@@ -18,7 +19,7 @@ struct CachedKey {
 
 /// Shared application state with server key cache.
 pub struct AppState {
-    /// Cache keyed by the first 32 chars of the base64 server key.
+    /// Cache keyed by a hash of the full base64 server key.
     /// Entries expire after 10 minutes.
     cache: Mutex<HashMap<String, CachedKey>>,
 }
@@ -35,13 +36,15 @@ impl AppState {
     /// Get or deserialize a ServerKey. Returns an Arc so it can be cloned cheaply
     /// for `set_server_key` (which takes ownership).
     fn get_or_insert_key(&self, key_b64: &str, key_bytes: &[u8]) -> Result<Arc<ServerKey>, String> {
-        let cache_key = &key_b64[..std::cmp::min(32, key_b64.len())];
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        key_b64.hash(&mut hasher);
+        let cache_key = hasher.finish().to_string();
         let mut cache = self.cache.lock().map_err(|_| "Cache lock poisoned")?;
 
         // Evict expired entries
         cache.retain(|_, v| v.inserted_at.elapsed().as_secs() < CACHE_TTL_SECS);
 
-        if let Some(entry) = cache.get(cache_key) {
+        if let Some(entry) = cache.get(&cache_key) {
             if entry.inserted_at.elapsed().as_secs() < CACHE_TTL_SECS {
                 return Ok(Arc::clone(&entry.key));
             }
@@ -52,7 +55,7 @@ impl AppState {
             bincode::deserialize(key_bytes).map_err(|e| format!("ServerKey deserialize: {e}"))?;
         let arc_sk = Arc::new(sk);
         cache.insert(
-            cache_key.to_string(),
+            cache_key,
             CachedKey {
                 key: Arc::clone(&arc_sk),
                 inserted_at: Instant::now(),
