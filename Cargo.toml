@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tfhe = { version = "0.7", features = ["integer", "x86_64-unix"] }
+tfhe = { version = "0.8", features = ["integer", "x86_64-unix"] }
 axum = { version = "0.7", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors"] }

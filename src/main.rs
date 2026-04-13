@@ -4,6 +4,7 @@ mod routes;
 use axum::{routing::{get, post}, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use axum::extract::DefaultBodyLimit;
 use tower_http::cors::CorsLayer;
 use axum::http::{header, HeaderValue, Method};
 
@@ -33,6 +34,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/compute/add", post(compute_add))
         .layer(cors)
+        .layer(DefaultBodyLimit::max(100 * 1024 * 1024)) // 100MB for FHE server key + ciphertexts
         .with_state(state);
 
     let port: u16 = std::env::var("PORT")

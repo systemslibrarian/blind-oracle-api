@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 #[allow(unused_imports)]
 use tfhe::prelude::*;
-use tfhe::{set_server_key, FheUint8, ServerKey};
+use tfhe::{set_server_key, CompressedServerKey, FheUint8, ServerKey};
 
 /// Cache entry: deserialized ServerKey + insertion time.
 struct CachedKey {
@@ -51,9 +51,10 @@ impl AppState {
             }
         }
 
-        // Deserialize (expensive: 1-5s)
-        let sk: ServerKey =
+        // Deserialize compressed key (expensive: 1-5s) and decompress
+        let compressed_sk: CompressedServerKey =
             bincode::deserialize(key_bytes).map_err(|e| format!("ServerKey deserialize: {e}"))?;
+        let sk: ServerKey = compressed_sk.decompress();
         let arc_sk = Arc::new(sk);
         cache.insert(
             cache_key,
