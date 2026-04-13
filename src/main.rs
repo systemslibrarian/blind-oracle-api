@@ -29,6 +29,7 @@ async fn main() {
         .allow_headers(tower_http::cors::Any);
 
     let app = Router::new()
+        .route("/", get(index))
         .route("/health", get(health))
         .route("/compute/add", post(compute_add))
         .layer(cors)
@@ -44,6 +45,21 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+async fn index() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({
+        "service": "blind-oracle-api",
+        "status": "ok",
+        "routes": {
+            "health": "/health",
+            "computeAdd": "/compute/add"
+        },
+        "methods": {
+            "health": "GET",
+            "computeAdd": "POST"
+        }
+    }))
 }
 
 async fn health() -> axum::Json<serde_json::Value> {
