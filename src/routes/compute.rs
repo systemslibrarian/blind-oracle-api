@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+#[allow(unused_imports)]
 use tfhe::prelude::*;
 use tfhe::{set_server_key, FheUint8, ServerKey};
 

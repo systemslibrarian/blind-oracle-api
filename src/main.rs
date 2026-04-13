@@ -4,8 +4,8 @@ mod routes;
 use axum::{routing::{get, post}, Router};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::{CorsLayer, AllowOrigin};
-use axum::http::Method;
+use tower_http::cors::CorsLayer;
+use axum::http::{header, HeaderValue, Method};
 
 use routes::compute::{compute_add, AppState};
 
@@ -21,12 +21,12 @@ async fn main() {
     let state = Arc::new(AppState::new());
 
     let cors = CorsLayer::new()
-        .allow_origin(AllowOrigin::list([
-            "https://systemslibrarian.github.io".parse().unwrap(),
-            "http://localhost:5173".parse().unwrap(),
-        ]))
-        .allow_methods([Method::GET, Method::POST])
-        .allow_headers(tower_http::cors::Any);
+        .allow_origin([
+            "https://systemslibrarian.github.io".parse::<HeaderValue>().unwrap(),
+            "http://localhost:5173".parse::<HeaderValue>().unwrap(),
+        ])
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::CONTENT_TYPE]);
 
     let app = Router::new()
         .route("/", get(index))
