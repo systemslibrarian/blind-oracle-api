@@ -1,3 +1,4 @@
-node_modules/
 /target/
-Cargo.lock
+
+# Cargo.lock IS committed: this crate builds a binary, so a locked, reproducible
+# dependency graph is intentional and required for deterministic deploys.

@@ -2,11 +2,25 @@
   "name": "Blind Oracle API",
   "image": "mcr.microsoft.com/devcontainers/rust:1",
   "postCreateCommand": "cargo build 2>&1",
+  "forwardPorts": [3001],
+  "portsAttributes": {
+    "3001": {
+      "label": "blind-oracle-api",
+      "onAutoForward": "notify"
+    }
+  },
   "customizations": {
     "vscode": {
       "extensions": [
-        "rust-lang.rust-analyzer"
-      ]
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
     }
   }
 }

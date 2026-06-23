@@ -1,41 +1,184 @@
 # blind-oracle-api
 
+[![CI](https://github.com/systemslibrarian/crypto-lab-blind-oracle-api/actions/workflows/ci.yml/badge.svg)](https://github.com/systemslibrarian/crypto-lab-blind-oracle-api/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org)
+
+A Rust back-end that performs **fully homomorphic encrypted addition** on
+`FheUint8` ciphertexts using [TFHE-rs](https://github.com/zama-ai/tfhe-rs).
+The server is a **blind oracle**: it computes on ciphertexts it can never
+decrypt, because the decryption key never leaves the browser.
+
 ## What It Is
 
-Blind Oracle API is a Rust back-end that performs fully homomorphic encrypted addition on `FheUint8` ciphertexts using [TFHE-rs](https://github.com/zama-ai/tfhe-rs). The server receives a `ServerKey` (evaluation key) and two encrypted 8-bit integers from the browser client, computes their homomorphic sum via gate bootstrapping, and returns the encrypted result — without ever accessing plaintext. TFHE is a lattice-based FHE scheme with post-quantum security assumptions; the `ClientKey` never leaves the browser, making the server a blind oracle that processes ciphertexts it cannot decrypt.
+The browser client generates a TFHE key pair, encrypts two 8-bit integers, and
+sends the two ciphertexts plus an *evaluation key* (`ServerKey`) to this API.
+The server computes the homomorphic sum via gate bootstrapping and returns the
+encrypted result — without ever accessing plaintext. The `ClientKey` (the only
+key that can decrypt) never leaves the browser, so the server holds only the
+ability to *compute*, never to *read*.
 
-## When to Use It
+TFHE is a lattice-based FHE scheme with post-quantum security assumptions.
 
-- **Privacy-preserving server-side computation** — when a client needs a server to compute on its data without revealing the inputs or outputs.
-- **Demonstrating FHE gate bootstrapping** — each `FheUint8` operation resets the noise budget automatically, enabling unlimited computation depth with no manual noise management.
-- **Blind oracle pattern** — when the trust model requires the server to hold only an evaluation key and never possess decryption capability.
-- **Post-quantum secure computation** — TFHE's lattice-based hardness assumption is believed to resist quantum attacks, unlike RSA or ECC.
-- **Not suitable for high-throughput or low-latency workloads** — a single `FheUint8` addition takes 100 ms–2 s; use conventional encryption or MPC when sub-millisecond latency is required.
+## When to Use This Pattern
 
-## Live Demo
+- **Privacy-preserving server-side computation** — a client needs a server to
+  compute on its data without revealing the inputs or outputs.
+- **Demonstrating FHE gate bootstrapping** — every `FheUint8` operation resets
+  the noise budget automatically, enabling unlimited computation depth with no
+  manual noise management.
+- **Blind oracle trust model** — the server holds only an evaluation key and
+  never possesses decryption capability.
+- **Post-quantum-secure computation** — TFHE's lattice hardness assumption is
+  believed to resist quantum attacks, unlike RSA or ECC.
 
-This API is the back-end for the Blind Oracle experiment at [systemslibrarian.github.io/crypto-lab/](https://systemslibrarian.github.io/crypto-lab/). The browser generates a TFHE key pair, encrypts two 8-bit integers, sends the ciphertexts and `ServerKey` to this API, and decrypts the homomorphic sum locally. The user can enter any two numbers (0–255) and verify that the server returns the correct encrypted result without ever seeing plaintext.
+> **Not** for high-throughput or low-latency workloads: a single `FheUint8`
+> addition takes 100 ms–2 s. Use conventional encryption or MPC when
+> sub-millisecond latency is required.
 
-## How to Run Locally
+## Architecture
+
+```
+  Browser (holds ClientKey)                    blind-oracle-api (this server)
+  ─────────────────────────                    ──────────────────────────────
+  1. generate_keys()                            never sees ClientKey
+  2. encrypt(a), encrypt(b)  ──ciphertexts──▶
+  3. send ServerKey          ──eval key─────▶   set_server_key(server_key)
+                                                deserialize ct_a, ct_b
+                                                ct_result = ct_a + ct_b   ◀── bootstrapped
+  4. decrypt(ct_result)      ◀──ciphertext───   (plaintext never accessed)
+```
+
+The server-side flow lives in three small modules:
+
+| File                   | Responsibility                                              |
+| ---------------------- | ----------------------------------------------------------- |
+| `src/main.rs`          | Router, middleware (CORS, body limit, timeout, concurrency limit, tracing), graceful shutdown. |
+| `src/routes/compute.rs`| `POST /compute/add` handler, server-key cache, and the testable `fhe_add` core. |
+| `src/fhe.rs`           | TFHE-rs context confirmation at startup.                    |
+
+## API
+
+### `GET /`
+Service discovery. Returns the service name and available routes.
+
+### `GET /health`
+Liveness/readiness probe. Cheap and side-effect free.
+
+```json
+{ "status": "ok", "scheme": "TFHE-rs", "fhe": true, "bootstrapping": "gate_bootstrapping_per_operation" }
+```
+
+### `POST /compute/add`
+Homomorphic addition of two encrypted 8-bit integers.
+
+**Request body** (all fields base64-encoded):
+
+| Field       | Type   | Description                                              |
+| ----------- | ------ | -------------------------------------------------------- |
+| `serverKey` | string | bincode-serialized **compressed** `ServerKey`.           |
+| `ctA`       | string | bincode-serialized `FheUint8` ciphertext (operand A).    |
+| `ctB`       | string | bincode-serialized `FheUint8` ciphertext (operand B).    |
+
+```jsonc
+// POST /compute/add
+{ "serverKey": "<base64>", "ctA": "<base64>", "ctB": "<base64>" }
+```
+
+**Success — `200 OK`:**
+
+```jsonc
+{
+  "ctResult": "<base64 FheUint8>",   // encrypted sum, wraps mod 256 on overflow
+  "operation": "tfhe_fhe_add",
+  "plaintextAccessed": false,        // always false — the server cannot decrypt
+  "scheme": "TFHE-rs",
+  "bootstrapping": "gate_bootstrapping_per_operation"
+}
+```
+
+**Errors — `400 Bad Request`:** `{ "error": "...", "plaintextAccessed": false }`
+with a specific message: `Invalid base64 in serverKey` / `... in ctA` / `... in ctB`,
+`Invalid server key`, or `Invalid ciphertext`.
+
+## Running Locally
 
 ```bash
 git clone https://github.com/systemslibrarian/crypto-lab-blind-oracle-api.git
 cd crypto-lab-blind-oracle-api
-cargo build --release
 cargo run --release
 ```
 
-The server listens on port `3001` by default. Set the `PORT` environment variable to override:
+The server listens on port `3001` by default; override with `PORT`:
 
 ```bash
 PORT=8080 cargo run --release
 ```
 
-> **Note:** TFHE-rs is a large cryptographic library. First build takes 5–10 minutes; subsequent builds are incremental.
+> The `tfhe` crate is built with the `x86_64-unix` feature and targets
+> Linux/macOS on x86-64. On other platforms (e.g. Windows), use the Docker image
+> or the included dev container. First build compiles TFHE-rs and takes
+> 5–10 minutes; subsequent builds are incremental.
+
+### With Docker
+
+```bash
+docker build -t blind-oracle-api .
+docker run -p 3001:3001 blind-oracle-api
+```
+
+The image runs as a non-root user and ships a `HEALTHCHECK` against `/health`.
+
+## Configuration
+
+| Variable   | Default | Description                                          |
+| ---------- | ------- | ---------------------------------------------------- |
+| `PORT`     | `3001`  | TCP port to listen on.                               |
+| `RUST_LOG` | `info`  | Log filter, e.g. `RUST_LOG=blind_oracle_api=debug`.  |
+
+Additional safety limits (compile-time constants in `src/main.rs`): a 100 MB
+request-body cap, a 60 s per-request timeout, and a concurrency limit equal to
+available CPU parallelism.
+
+## Testing
+
+```bash
+cargo test --release
+```
+
+The suite generates **real** TFHE keys and performs genuine homomorphic
+operations — it verifies that the encrypted sum decrypts to the correct
+plaintext, that addition wraps modulo 256, that the server-key cache returns a
+shared handle on a hit, and that malformed keys/ciphertexts are rejected. Because
+it runs real FHE, it is slower than a typical Rust test suite.
+
+## Security Model
+
+- The server **never** holds or derives a `ClientKey` and cannot decrypt any
+  ciphertext. `plaintextAccessed` is always `false`.
+- Full ciphertexts and keys are **never** logged — only short, non-sensitive
+  previews (first 12 base64 characters).
+- CORS is restricted to the demo origins (`systemslibrarian.github.io` and
+  `localhost:5173`).
+- This is a demonstration of the blind-oracle pattern, not a hardened
+  multi-tenant service; there is no authentication or rate limiting beyond the
+  concurrency cap.
+
+## Live Demo
+
+Back-end for the Blind Oracle experiment at
+[systemslibrarian.github.io/crypto-lab/](https://systemslibrarian.github.io/crypto-lab/).
+Enter any two numbers (0–255) and verify the server returns the correct
+encrypted result without ever seeing plaintext.
 
 ## Part of the Crypto-Lab Suite
 
-This API is one component of the [Crypto-Lab](https://systemslibrarian.github.io/crypto-lab/) suite of cryptographic demonstrations.
+One component of the [Crypto-Lab](https://systemslibrarian.github.io/crypto-lab/)
+suite of cryptographic demonstrations.
+
+## License
+
+[MIT](LICENSE) © 2026 Paul Clark
 
 ---
 

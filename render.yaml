@@ -3,6 +3,7 @@ services:
     name: blind-oracle-api
     env: docker
     dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 10000

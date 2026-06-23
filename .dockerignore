@@ -1,0 +1,13 @@
+# Keep the Docker build context small and the build deterministic.
+target/
+.git/
+.github/
+.devcontainer/
+node_modules/
+*.md
+!README.md
+.gitignore
+.dockerignore
+.editorconfig
+rustfmt.toml
+LICENSE
