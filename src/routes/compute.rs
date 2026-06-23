@@ -219,8 +219,9 @@ pub async fn compute_add(
 
 #[cfg(test)]
 mod tests {
+    // `use super::*` already re-exports the parent's `tfhe::prelude::*` glob,
+    // which provides the FheEncrypt / FheDecrypt trait methods used below.
     use super::*;
-    use tfhe::prelude::*; // FheEncrypt / FheDecrypt trait methods
     use tfhe::{generate_keys, ClientKey, ConfigBuilder};
 
     /// Generate a fresh (ClientKey, decompressed ServerKey) pair for testing.
